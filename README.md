@@ -1,6 +1,12 @@
 # **OTA Hub (by Hard Stuff)** - OTA directly from GitHub
 
-This is the Do-It-Yourself library for performing Over-the-Air updates for your ESP32 devices directly from GitHub releases. _Read the [the docs](https://github.com/Hard-Stuff/OTA-Hub-diy-example_project) for more a wider description of **OTA Hub**._
+## MAJOR CHANGE ANNOUNCEMENT
+
+We have merged the DIY library with the pro library to give one smooth library that offers more customisation and easier usage.
+
+## GitHub release usage
+
+For GitHub release usage (i.e. DIY) _please read the [the docs](https://github.com/Hard-Stuff/OTA-Hub-diy-example_project) for more a wider description of **OTA Hub**._
 
 -   Once your GitHub CI/CD is set up on your public or private repos they will automatically create `firmware.bin` files for every newly created release.
 -   Next, configure your ESP32 devices to automatically check for the latest releases on your GitHub repository, and download and install the updates as needed.
@@ -9,9 +15,13 @@ This is the Do-It-Yourself library for performing Over-the-Air updates for your 
 
     Deliver Over-the-Air updates onto your ESP32/embedded devices directly from your code releases in an obvious, clean, light-weight way.
 
+    It is designed to do this on an abstract Client - this means it works equally well over WiFi (and WiFiClientSecure) as it does over 4G/5G clients such as TinyGSM.
+
 **OTA Hub DIY** is for the hobbyists and small teams, directly grabbing release files from GitHub, involving as minimal setup as possible. It's completely open-source, and of course, free!
 
 **OTA Hub Pro** is for the experts and larger teams, providing you with a dashboard to have finer control over your release deployment, fleet management, greater flexibility, and even less setup! Find out more at [ota-hub.com/pro](ota-hub.com/pro).
+
+See our [4G example](./examples/SIM7600/) for a SIM7600 HTTPS implementation of this.
 
 ### Benefits over alternatives
 
@@ -25,7 +35,7 @@ _\* Note that our default examples are for SSL-enabled connections, as GitHub re
 
 ## Usage
 
-_You must first have CI/CD set up on your firmware repo of choice. Follow [the docs](https://github.com/Hard-Stuff/OTA-Hub-diy-example_project) for a simple copy-paste guide on how to do this._
+_You must first have CI/CD set up on your firmware repo of choice. Follow [the docs](https://github.com/Hard-Stuff/OTA-Hub-diy-example_project) for a simple copy-paste guide on how to do this -> you can use the above example project as a robust template._
 
 The flow logic for this entire OTA library is super simple:
 
@@ -74,15 +84,10 @@ void setup()
     else
     // 2. Perform the update (if there is one)
     {
-        OTA::InstallCondition result = OTA::performUpdate(&details);
-
-        if (result == OTA::REDIRECT_REQUIRED)
-        {
-            // Step 3: Follow GitHub's redirect to get the asset files
-            // .. (n.b. this is faster and easier over on OTA Hub Pro!)
-            wifi_client.setCACert(OTAGH_REDIRECT_CA_CERT);  // Set the objects.githubusercontent.com SSL cert
-            OTA::continueRedirect(&details);                // Follow the redirect and performUpdate.
+        if (OTA::performUpdate(&details) == OTA::SUCCESS) {
+            // .. success! It'll restart by default, or you can do other things here...
         }
+        // By default we follow any redirects internally, but should you need to set custom certs you can do that by added a (..., false);
     }
     // As normal... note: performUpdate will restart the board unless you specify otherwise.
 }
@@ -101,19 +106,29 @@ void loop()
 #define OTAGH_REPO_NAME "OTA-Hub-diy-example_project" // chante to the repo's name
 
 // Optional defines
-#define OTAGH_BEARER "YOUR PRIVATE REPO TOKEN" // Needed for private repositories.
+#define OTAGH_BEARER "YOUR PRIVATE REPO TOKEN" // Needed for private repositories, see GITHUB-BEARER_TOKENS.md
 
-// Optional, but rarely-changed, defines
-#define OTAGH_SERVER char*  // default: api.github.com
-#define OTAGH_PORT number   // default: 443 (HTTPS secured)
-#define OTAGH_CHECK_PATH .. // only change if you're not using GitHub
-#define OTAGH_BIN_PATH ..   // only change if you're not using GitHub
+// If you are using another server (i.e. not github) you can set
+#define OTA_SERVER char*  // default: api.github.com
+#define OTA_PORT number   // default: 443 (HTTPS secured)
+#define OTA_CHECK_PATH .. // only change if you're not using GitHub
+#define OTA_BIN_PATH ..   // only change if you're not using GitHub
+#define OTA_BEARER ..     // bearer token for your custom server
                             // you will also need to set custom certs if not using GitHub
 
 // Built-in CA Certs
-static const char OTAGH_CA_CERT[];          // CA Cert for GitHub's api.github.com server
-static const char OTAGH_REDIRECT_CA_CERT[]; // CA Cert for GitHub's objects.githubusercontent.com server
+static const char OTAGH_CA_CERT[];          // CA Cert for GitHub's api.github.com and ...github.io servers We can make NO guarantee that these will remain valid indefinitely!
 ```
+
+### Other functions to be aware of
+
+-  `details.condition` is an UpdateCondition type, it can be:
+    - NO_UPDATE,     // The proposed release is the same name and same age as this one (i.e. they're the same)
+    - OLD_DIFFERENT, // The proposed release is different to what we've got here (but it's older)
+    - NEW_SAME,      // The proposed release is newer but has the same name as this one (are you versioning correctly?)
+    - NEW_DIFFERENT  // The proposed update is both newer and has a different name (so is likely to be a legitimate update)
+    - This also means that if you flash locally and there is a release on GitHub already, that you'll get an "OLD_DIFFERENT" because you've flashed a firmware that isn't the latest release on GitHub.
+- `InstallCondition continueRedirect(&details, ...)` is for if you are told from your server that a redirect is necessary. By default we attempt to follow redirects internally, but some servers+setups may require you to e.g. disable following the redirect, then set custom certs and inject custom info, then follow the redirect.
 
 ### Dependencies
 
@@ -123,7 +138,7 @@ static const char OTAGH_REDIRECT_CA_CERT[]; // CA Cert for GitHub's objects.gith
 
 ### Note on CA Certs
 
-- Typically you will need two CA certs if working as standard with GitHub: one for api.github.com, and one for objects.githubusercontent.com.
+- We've bundled a few GitHub CA certs together to cover both api.github.com, objects.githubusercontent.com, and github.io.
 - **Certificates expire!** They tend to last a while, these ones last until 2030, but that's something to be aware of. Once either certificate has expired your devices will not be able to perform OTA (until flashed with new certs) - this is something we're going to attempt to future-proof going forwards.
 - Plus, as we've experienced recently, certificates that are in date [might just stop working](https://news.ycombinator.com/item?id=35295216). In which case it's not a bad idea to either have a fallback option (we recommend [ElegantOTA](https://github.com/ayushsharma82/ElegantOTA) for local flashing) or to watch this space for our future proofing.
 - You can always set your own certs (should the default ones not work) via `wifi_client.setCACert(NEW CA CERT)` and `wifi_client.setCACert(NEW CA CERT)`.

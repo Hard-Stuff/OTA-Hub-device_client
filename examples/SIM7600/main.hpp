@@ -1,14 +1,14 @@
 #include <Arduino.h>
 
 // OTA Hub via GitHub
-#define OTAGH_OWNER_NAME "Hard-Stuff"
-#define OTAGH_REPO_NAME "OTA-Hub-diy-example_project"
-#define OTAGH_BEARER "YOUR PRIVATE REPO TOKEN" // Follow the docs if using a private repo.
-#include <OTA-Hub-diy.hpp>
+#define OTAGH_OWNER_NAME "YOUR GITHUB ID"
+#define OTAGH_REPO_NAME "YOUR REPO NAME"
+#define OTAGH_BEARER "YOUR PRIVATE REPO TOKEN" // Follow the docs if using a private repo. Remove if repo is public.
+#include <OTA-Hub.hpp>
 
-#define SIM7600_APN "Three" // Your SIM's APN
-#include <Hard-Stuff-SIM7600.hpp>
-SIM7600::ClientSecure secure_client(0);
+#define SIM7600_APN "Three"             // Your SIM's APN
+#include <Hard-Stuff-SIM7600.hpp>       // Add "hard-stuff/SIM7600@^0.0.2" to your platformio.ini lib_deps
+SIM7600::ClientSecure secure_client(0); // There are 2 dedicated secure clients and 8 total clients on the SIM7600.
 
 void setup()
 {
@@ -27,12 +27,9 @@ void setup()
     if (OTA::NEW_DIFFERENT == details.condition) // Only update if the update is both new and a different version name
     {
         // Perform OTA update
-        OTA::InstallCondition result = OTA::performUpdate(&details);
-        // GitHub hosts files on the objects.githubusercontent.com server, so we have to follow the redirect, unfortunately.
-        if (result == OTA::REDIRECT_REQUIRED)
+        if (OTA::performUpdate(&details) == OTA::SUCCESS)
         {
-            secure_client.setCACert(OTAGH_REDIRECT_CA_CERT); // Set the objects.githubusercontent.com SSL cert
-            OTA::continueRedirect(&details);
+            // .. success! It'll restart by default, or you can do other things here...
         }
     }
     else
