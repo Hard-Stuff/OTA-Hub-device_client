@@ -1,15 +1,13 @@
 #pragma once
-#define HTTP_MAX_HEADERS 30          // GitHub sends ~28 headers back!
+#define HTTP_MAX_HEADERS 30 // GitHub sends ~28 headers back!
+
+#include <Arduino.h>
 SET_LOOP_TASK_STACK_SIZE(16 * 1024); // 16KB, GitHub responses are heavy
 
 // libs
 #include <Hard-Stuff-Http.hpp>
 #include <Update.h>
 #include <ArduinoJson.h>
-#include <TimeLib.h>
-
-#include <ota-github-defaults.h>
-#include <ota-github-cacerts.h>
 
 #ifndef OTA_VERSION
 #define OTA_VERSION "local_development"
@@ -86,6 +84,7 @@ namespace OTA
     {
         UpdateCondition condition;
         String name;
+        String tag_name;
         time_t published_at;
         String firmware_asset_id;
         String firmware_asset_endpoint;
@@ -103,6 +102,7 @@ namespace OTA
             print_stream->println("------------------------");
             print_stream->println("Condition: " + String(condition_strings[condition]));
             print_stream->println("name: " + name);
+            print_stream->println("tag_name: " + tag_name);
             print_stream->println("published_at: " + http_ota->formatTimeISO8601(published_at));
             print_stream->println("firmware_asset_id: " + String(firmware_asset_id));
             print_stream->println("firmware_asset_endpoint: " + String(firmware_asset_endpoint));
@@ -112,6 +112,10 @@ namespace OTA
 #pragma endregion
 
 #pragma region SupportFunctions
+
+    // Initial define of function
+    InstallCondition continueRedirect(UpdateObject *details, bool restart = true);
+
     void confirmConnected()
     {
         if (http_ota->connected())
@@ -123,8 +127,8 @@ namespace OTA
     {
         print_stream->println("------------------------");
         print_stream->println("Device MAC: " + getMacAddress());
-        print_stream->println("Firmware Version: " + (String)OTA_VERSION);
-        print_stream->println("Firmware Compilation Date: " + (String)__DATE__ + ", " + (String)__TIME__);
+        print_stream->println("Firmware Version: " + String(OTA_VERSION));
+        print_stream->println("Firmware Compilation Date: " + String(__DATE__) + ", " + String(__TIME__));
         print_stream->println("------------------------");
     }
 
@@ -150,7 +154,7 @@ namespace OTA
     void init(Client &set_underlying_client)
     {
         printFirmwareDetails();
-        reinit(set_underlying_client, OTAGH_SERVER, OTAGH_PORT);
+        reinit(set_underlying_client, OTA_SERVER, OTA_PORT);
     }
 
 #pragma endregion
@@ -158,7 +162,7 @@ namespace OTA
 #pragma region CoreFunctions
 
     /**
-     * @brief Check GitHub to see if an update is available
+     * @brief Check your server (or GitHub) to see if an update is available
      *
      * @return UpdateObject that bundles all the info we'll need.
      */
@@ -169,12 +173,19 @@ namespace OTA
 
         // Get the response from the server
         HardStuffHttpRequest request;
-        request.addHeader("Accept", "application/vnd.github+json");
-#ifdef OTAGH_BEARER
-        request.addHeader("Authorization", "Bearer " + String(OTAGH_BEARER)); // Used only in private repos. See the docs.
+        if (String(OTA_SERVER).indexOf("github") > 0)
+        {
+            request.addHeader("Accept", "application/vnd.github+json");
+        }
+        else
+        {
+            request.addHeader("accept", "application/json");
+        }
+#ifdef OTA_BEARER
+        request.addHeader("authorization", "Bearer " + String(OTA_BEARER)); // Used only in private repos. See the docs.
 #endif
 
-        HardStuffHttpResponse response = http_ota->getFromHTTPServer(String(OTAGH_CHECK_PATH), &request);
+        HardStuffHttpResponse response = http_ota->getFromHTTPServer(OTA_CHECK_PATH, &request);
 
         if (response.success())
         {
@@ -202,6 +213,7 @@ namespace OTA
             }
 
             return_object.name = release_response["name"].as<String>();
+            return_object.tag_name = release_response["tag_name"].as<String>();
             return_object.published_at = http_ota->formatTimeFromISO8601(release_response["published_at"].as<String>());
 
             // Evaluate comparison based on metadata
@@ -211,11 +223,11 @@ namespace OTA
             JsonArray asset_array = release_response["assets"].as<JsonArray>();
             for (JsonVariant v : asset_array)
             {
-                if (v["name"].as<String>().compareTo("firmware.bin") == 0)
+                if (v["name"].as<String>().compareTo(FIRMWARE_BIN_MATCH) == 0)
                 {
                     return_object.firmware_asset_id = v["id"].as<String>();
                     return_object.condition = update_is_different ? (update_is_newer ? NEW_DIFFERENT : OLD_DIFFERENT) : (update_is_newer ? NEW_SAME : NO_UPDATE);
-                    return_object.firmware_asset_endpoint = OTAGH_BIN_PATH + return_object.firmware_asset_id;
+                    return_object.firmware_asset_endpoint = OTA_ASSET_ENDPOINT_CONSTRUCTOR(return_object.firmware_asset_id);
                     return return_object;
                 }
             }
@@ -226,7 +238,7 @@ namespace OTA
             return return_object;
         }
 
-        Serial.println("Failed to connect to GitHub. Check your OTAGH_... #defines.");
+        Serial.println("Failed to connect to GitHub. Check your OTA_... #defines.");
         return return_object;
     }
 
@@ -237,15 +249,15 @@ namespace OTA
      * @param restart You can stop the updater from automatically restarting the board, say if you need to wind things down a bit...
      * @return InstallCondition Was it a success?
      */
-    InstallCondition performUpdate(UpdateObject *details, bool restart = true)
+    InstallCondition performUpdate(UpdateObject *details, bool follow_redirects = true, bool restart = true)
     {
-        Serial.println("Fetching update from: " + (details->redirect_server.isEmpty() ? String(OTAGH_SERVER) : details->redirect_server) + details->firmware_asset_endpoint);
+        Serial.println("Fetching update from: " + (details->redirect_server.isEmpty() ? String(OTA_SERVER) : details->redirect_server) + details->firmware_asset_endpoint);
 
         HardStuffHttpRequest request;
         // Headers
         request.addHeader("Accept", "application/octet-stream");
-#ifdef OTAGH_BEARER
-        request.addHeader("Authorization", "Bearer " + String(OTAGH_BEARER));
+#ifdef OTA_BEARER
+        request.addHeader("Authorization", "Bearer " + String(OTA_BEARER));
 #endif
 
         // On GitHub this will likely return a 302 with a "location" header:
@@ -276,16 +288,24 @@ namespace OTA
             int slash_index = URL.indexOf("/");
 
             http_ota->stop();
-            delay(1000);
+            delay(250);
             details->redirect_server = URL.substring(0, slash_index);
             details->firmware_asset_endpoint = URL.substring(slash_index);
-            return REDIRECT_REQUIRED;
+            if (follow_redirects)
+            {
+                Serial.println("Redirect required, handling internally...");
+                return continueRedirect(details, restart);
+            }
+            else
+            {
+                return REDIRECT_REQUIRED;
+            }
         }
 
         if (response.status_code >= 200 && response.status_code < 300)
         {
             // we can download as normal
-            Serial.println("firmware.bin found. Checking validity.");
+            Serial.println(String(FIRMWARE_BIN_MATCH) + " found. Checking validity.");
             int contentLength;
             bool isValidContentType;
 
@@ -305,7 +325,7 @@ namespace OTA
 
             if (contentLength && isValidContentType)
             {
-                Serial.println("firmware.bin is good. Beginning the OTA update, this may take a while...");
+                Serial.println(String(FIRMWARE_BIN_MATCH) + " is good. Beginning the OTA update, this may take a while...");
                 if (Update.begin(contentLength))
                 {
                     Update.writeStream(*http_ota);
@@ -331,12 +351,13 @@ namespace OTA
             }
             else
             {
-                Serial.println("Not enough space available.");
+                Serial.println("Content isn't a valid *.bin download.");
             }
         }
         else
         {
             Serial.println("There was no content in the response");
+            response.print(); // Log the errors
         }
         http_ota->stop();
         return FAILED_TO_DOWNLOAD;
@@ -347,10 +368,10 @@ namespace OTA
      * Behaves similar to performUpdate, but is used after defining new SSL certs as needed.
      * @return InstallCondition
      */
-    InstallCondition continueRedirect(UpdateObject *details, bool restart = true)
+    InstallCondition continueRedirect(UpdateObject *details, bool restart)
     {
-        reinit(*underlying_client, details->redirect_server.c_str(), OTAGH_PORT);
-        return performUpdate(details, restart);
+        reinit(*underlying_client, details->redirect_server.c_str(), OTA_PORT);
+        return performUpdate(details, false, restart);
     }
 #pragma endregion
 }
