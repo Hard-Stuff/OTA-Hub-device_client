@@ -3,10 +3,13 @@
 // OTA Hub via GitHub
 #define OTAGH_OWNER_NAME "Hard-Stuff"
 #define OTAGH_REPO_NAME "OTA-Hub-diy-example_project"
-#include <OTA-Hub-diy.hpp>
+#define OTAGH_BEARER "YOUR PRIVATE REPO TOKEN" // Follow the docs if using a private repo. Remove if repo is public.
+#include <OTA-Hub.hpp>
 
 // Networking
-#include <configs/wifi.h>
+
+static const char *WIFI_SSID = "YOUR WIFI SSID";
+static const char *WIFI_PASS = "YOUR WIFI PASS";
 #include <WiFiClientSecure.h>
 WiFiClientSecure wifi_client;
 
@@ -30,16 +33,13 @@ void setup()
 
     // Check OTA for updates
     OTA::UpdateObject details = OTA::isUpdateAvailable();
-    details.print(); // Super useful for debugging!
+    details.print(); // Super useful for debugging! Feel free to remove.
     if (OTA::NO_UPDATE != details.condition)
     {
         // Perform OTA update
-        OTA::InstallCondition result = OTA::performUpdate(&details);
-        // GitHub hosts files on different server, so we have to follow the redirect, unfortunately.
-        if (result == OTA::REDIRECT_REQUIRED)
+        if (OTA::performUpdate(&details) == OTA::SUCCESS)
         {
-            wifi_client.setCACert(OTAGH_REDIRECT_CA_CERT); // Set the objects.githubusercontent.com SSL cert
-            OTA::continueRedirect(&details);
+            // .. success! It'll restart by default, or you can do other things here...
         }
     }
     else

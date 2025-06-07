@@ -87,8 +87,7 @@ void setup()
         if (OTA::performUpdate(&details) == OTA::SUCCESS) {
             // .. success! It'll restart by default, or you can do other things here...
         }
-        // By default we follow any redirects internally, but should you need to set custom certs you can do that by added a (...), false);
-
+        // By default we follow any redirects internally, but should you need to set custom certs you can do that by added a (..., false);
     }
     // As normal... note: performUpdate will restart the board unless you specify otherwise.
 }
@@ -121,6 +120,16 @@ void loop()
 static const char OTAGH_CA_CERT[];          // CA Cert for GitHub's api.github.com and ...github.io servers We can make NO guarantee that these will remain valid indefinitely!
 ```
 
+### Other functions to be aware of
+
+-  `details.condition` is an UpdateCondition type, it can be:
+    - NO_UPDATE,     // The proposed release is the same name and same age as this one (i.e. they're the same)
+    - OLD_DIFFERENT, // The proposed release is different to what we've got here (but it's older)
+    - NEW_SAME,      // The proposed release is newer but has the same name as this one (are you versioning correctly?)
+    - NEW_DIFFERENT  // The proposed update is both newer and has a different name (so is likely to be a legitimate update)
+    - This also means that if you flash locally and there is a release on GitHub already, that you'll get an "OLD_DIFFERENT" because you've flashed a firmware that isn't the latest release on GitHub.
+- `InstallCondition continueRedirect(&details, ...)` is for if you are told from your server that a redirect is necessary. By default we attempt to follow redirects internally, but some servers+setups may require you to e.g. disable following the redirect, then set custom certs and inject custom info, then follow the redirect.
+
 ### Dependencies
 
 -   arduino-libraries/ArduinoHttpClient
@@ -129,7 +138,7 @@ static const char OTAGH_CA_CERT[];          // CA Cert for GitHub's api.github.c
 
 ### Note on CA Certs
 
-- Typically you will need two CA certs if working as standard with GitHub: one for api.github.com, and one for objects.githubusercontent.com.
+- We've bundled a few GitHub CA certs together to cover both api.github.com, objects.githubusercontent.com, and github.io.
 - **Certificates expire!** They tend to last a while, these ones last until 2030, but that's something to be aware of. Once either certificate has expired your devices will not be able to perform OTA (until flashed with new certs) - this is something we're going to attempt to future-proof going forwards.
 - Plus, as we've experienced recently, certificates that are in date [might just stop working](https://news.ycombinator.com/item?id=35295216). In which case it's not a bad idea to either have a fallback option (we recommend [ElegantOTA](https://github.com/ayushsharma82/ElegantOTA) for local flashing) or to watch this space for our future proofing.
 - You can always set your own certs (should the default ones not work) via `wifi_client.setCACert(NEW CA CERT)` and `wifi_client.setCACert(NEW CA CERT)`.
