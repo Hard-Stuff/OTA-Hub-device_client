@@ -1,6 +1,6 @@
 {
 	"name": "OTA-Hub-esp_client",
-	"version": "0.0.6",
+	"version": "0.0.7",
 	"description": "Client-side code for running Do-It-Yourself device updates via GitHub/GitLab, by OTA Hub.",
 	"keywords": "http, ota, ota-hub, github, gitlab",
 	"repository": {
