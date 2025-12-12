@@ -1,11 +1,11 @@
 {
-	"name": "OTA-Hub-device_client",
-	"version": "0.0.5",
-	"description": "Client-side code for running Do-It-Yourself device updates via GitHub, by OTA Hub.",
-	"keywords": "http, ota, ota-hub, github",
+	"name": "OTA-Hub-esp_client",
+	"version": "0.0.6",
+	"description": "Client-side code for running Do-It-Yourself device updates via GitHub/GitLab, by OTA Hub.",
+	"keywords": "http, ota, ota-hub, github, gitlab",
 	"repository": {
 		"type": "git",
-		"url": "https://github.com/Hard-Stuff/OTA-Hub-device_client.git"
+		"url": "https://github.com/Hard-Stuff/OTA-Hub-esp_client.git"
 	},
 	"authors": [
 		{
@@ -16,6 +16,7 @@
 	],
 	"license": "MIT",
 	"dependencies": {
+    "hard-stuff/Http": "^0.0.7",
 		"bblanchon/ArduinoJson": "^7.0.0",
 		"paulstoffregen/Time": "^1.6.1"
 	},

@@ -1,11 +1,31 @@
-# **OTA Hub (by Hard Stuff)** - OTA directly from GitHub, GitLab, and more!
+# **OTA Hub (by Hard Stuff)** - Over the Air Firmware Updates directly from GitHub, GitLab, and more!
 
-## GitHub release usage
+**OTA Hub** is a solution to enable building and hosting your firmware updates on Git (Hub or Lab) and accessing them simply on your ESP devices. That's this repo, and it's entirely open source.
 
-For GitHub release usage (i.e. DIY) _please read the [the docs](https://github.com/Hard-Stuff/OTA-Hub-diy-example_project) for more a wider description of **OTA Hub**._
+**OTA Hub Cloud** _(coming soon)_ is a cloud software that builds on that by enabling per-device provisioning, and data endpoints to plug into your stack. Think AWS IoT Core but massively simplified - great for hobbyists, prototyping, and startups. OTA Hub Cloud comes in both free and paid tiers.
 
--   Once your GitHub CI/CD is set up on your public or private repos they will automatically create `firmware.bin` files for every newly created release.
--   Next, configure your ESP32 devices to automatically check for the latest releases on your GitHub repository, and download and install the updates as needed.
+**What sucks about current systems**
+
+- OTA has long been a sore point in hobbyist and early-stage prototyping (e.g. startups), because while AWS and Blynk etc. offer OTA solutions, they all require so much set up, and crucially so much commitment that it hardle seems worth it.
+- Combine that with the weird insistence on drag and dropping `.bin` files into file upload ports, or constantly replacing the file in a dedicated S3 bucket - it becomes a mess bound to go wrong (and impossible to actually trace).
+  
+**Why this library rocks 🤘 (for hobbyists & prototypes)**
+
+1. You can use GitHub/GitLab as your build engine and storage solution for your `.bin` firmware files, obviously in the same place as your actual code.
+2. That means it's cheaper (free), easier, more obvious, and simpler to track what code is where.
+3. You're not married to any one platform/solution - easy to drop in, but easy to drop out and upscale when needed!
+4. This works for Public and your Private Git repos.
+5. It's incredibly flexible - on top of GitHub, GitLab, and OTAHub Cloud, you can leverage this library with many other build providers, and we're implementing more soon!
+6. It works on any abstract HTTP client, meaning `WiFi`, `WiFiClientSecure`, `TinyGSM` (4G/5G), even `LTEm/NBIoT modems`.
+
+
+## Git release usage
+
+The OTA process can now be simplified to:
+1. Have your firmware code hosted on GitHub/GitLab - we build our firmware in `platformio` projects.
+2. Use Git's CI/CD to build that firmware into releasable `.bin` files hosted there - we have drop in examples here.
+3. Your firmware would have OTA Hub Device Client running, and you check for a new release e.g. on boot. This finds the latest release, and based on your logic (see below) downloads and flashes it.
+4. _That is it.. it's that simple!_
 
 **OTA Hub** is designed to do one thing, and one thing only:
 
@@ -13,21 +33,9 @@ For GitHub release usage (i.e. DIY) _please read the [the docs](https://github.c
 
     It is designed to do this on an abstract Client - this means it works equally well over WiFi (and WiFiClientSecure) as it does over 4G/5G clients such as TinyGSM.
 
-**OTA Hub DIY** is for the hobbyists and small teams, directly grabbing release files from GitHub, involving as minimal setup as possible. It's completely open-source, and of course, free!
+**OTA Hub** is for the hobbyists and small teams, directly grabbing release files from GitHub, involving as minimal setup as possible. It's completely open-source, and of course, free!
 
-**OTA Hub Pro** is for the experts and larger teams, providing you with a dashboard to have finer control over your release deployment, fleet management, greater flexibility, and even less setup! Find out more at [ota-hub.com/pro](ota-hub.com/pro).
-
-See our [4G example](./examples/SIM7600/) for a SIM7600 HTTPS implementation of this.
-
-### Benefits over alternatives
-
-1. No-longer worry about drag-and-dropping `.bin` files into some fiddly UI.
-2. Easily trace your code to your releases to your deployed firmware.
-3. Not locked into any eco-systems you probably aren't using already (you're probably already using GitHub).
-4. Client-agnostic! Implement OTA Hub on-top of secure or insecure\* connections, on 4G, NB-IoT, or WiFi modules.
-5. The DIY version is open-source, **completely free**, and GitHub hosting is also (currently) completely free!
-
-_\* Note that our default examples are for SSL-enabled connections, as GitHub requires a secure connection. As this is open-source, you can of course use your own storage buckets APIs for insecure connections etc._
+**OTA Hub Cloud** comes both in free and professional tiers, providing you with a dashboard to have finer control over your release deployment, fleet management, greater flexibility, and even less setup! Find out more at [ota-hub.com/pro](ota-hub.com/pro).
 
 ## Usage
 
@@ -42,89 +50,133 @@ The flow logic for this entire OTA library is super simple:
 ### Basic Example
 
 ```cpp
-// OTA Hub via GitHub
-#define OTAGH_OWNER_NAME "Hard-Stuff"
-#define OTAGH_REPO_NAME "OTA-Hub-diy-example_project"
-#include <OTA-Hub-diy.hpp>
+#include <Arduino.h>
 
-// Networking
-#include <configs/wifi.h>
+// OTA Hub via GitHub
+#include <OTA-Hub.hpp>
+#include <OTA-Hub/FOTA-providers/github.hpp> // Only needed for github
+
 #include <WiFiClientSecure.h>
+
 WiFiClientSecure wifi_client;
+OTAHub::FOTA::GithubProvider provider(
+    "Hard-Stuff",
+    "OTA-Hub-examples"); // Assumed a public repo
 
 void setup()
 {
-    // Initialise our board
-    Serial.begin(115200);
-    Serial.println("Started...");
-    WiFi.begin(WIFI_SSID, WIFI_PASS);
-    if (WiFi.waitForConnectResult() != WL_CONNECTED)
-    {
-        Serial.println("WiFi failure");
-        ESP.restart();
-    }
+  Serial.begin(115200);
+  Serial.println("Started...");
 
-    // Initialise OTA
-    // wifi_client.setInsecure(); // if you're worried about expiring CA certs and you don't need to validate SSL
-    wifi_client.setCACert(OTAGH_CA_CERT); // Set the api.github.cm SSL cert on the WiFi Client
-    OTA::init(wifi_client);
+  WiFi.begin("Your SSID", "Your PASS");
+  if (WiFi.waitForConnectResult() != WL_CONNECTED)
+  {
+    Serial.println("WiFi failure");
+    ESP.restart();
+  }
 
-    // 1. Check for updates, by checking the latest release on GitHub
-    // .. (n.b. get more control on OTA Hub Pro!)
-    OTA::UpdateObject details = OTA::isUpdateAvailable();
+  // Initialise OTA
+  wifi_client.setCACert(OTAHub::certs::GITHUB_CA); // Needed externally because you can use any (un)secure client!
+  OTAHub::FOTA::init(wifi_client, provider);
 
-    if (OTA::NO_UPDATE == details.condition)
-    {
-        Serial.println("No new update available. Continuing...");
-    }
-    else
-    // 2. Perform the update (if there is one)
-    {
-        if (OTA::performUpdate(&details) == OTA::SUCCESS) {
-            // .. success! It'll restart by default, or you can do other things here...
-        }
-        // By default we follow any redirects internally, but should you need to set custom certs you can do that by added a (..., false);
-    }
-    // As normal... note: performUpdate will restart the board unless you specify otherwise.
+  // Check OTA for updates
+  OTAHub::FOTA::UpdateObject details = OTAHub::FOTA::isUpdateAvailable();
+  details.print(); // Optionally print to Serial.
+
+  Serial.println(OTAHub::FOTA::ota_provider->FIRMWARE_WAS_BUILT_ON_PROVIDER
+                     ? "This was built on Git."
+                     : "This was built locally.");
+
+  if (OTAHub::FOTA::NO_UPDATE != details.condition)
+  {
+    Serial.println("An update is available!");
+    // Perform OTA update - will auto restart
+    if (OTAHub::FOTA::performUpdate(&details) != OTAHub::FOTA::SUCCESS)
+      // Something is wrong... Do something
+      Serial.println("Failed to download / install. Bother...")
+  }
+  else
+    Serial.println("No new update available. Continuing...");
+
+  // As normal
 }
 
 void loop()
 {
-    // As normal...
+  // As normal
 }
 ```
 
-### `#define`s to be aware of
+## Providers
+
+### GitHub
 
 ```cpp
-// Required defines
-#define OTAGH_OWNER_NAME "Hard-Stuff" // change to the repo's owner
-#define OTAGH_REPO_NAME "OTA-Hub-diy-example_project" // chante to the repo's name
-
-// Optional defines
-#define OTAGH_BEARER "YOUR PRIVATE REPO TOKEN" // Needed for private repositories, see GITHUB-BEARER_TOKENS.md
-
-// If you are using another server (i.e. not github) you can set
-#define OTA_SERVER char*  // default: api.github.com
-#define OTA_PORT number   // default: 443 (HTTPS secured)
-#define OTA_CHECK_PATH .. // only change if you're not using GitHub
-#define OTA_BIN_PATH ..   // only change if you're not using GitHub
-#define OTA_BEARER ..     // bearer token for your custom server
-                            // you will also need to set custom certs if not using GitHub
-
-// Built-in CA Certs
-static const char OTAGH_CA_CERT[];          // CA Cert for GitHub's api.github.com and ...github.io servers We can make NO guarantee that these will remain valid indefinitely!
+#include <OTA-Hub/FOTA-providers/github.hpp>
+...
+OTAHub::FOTA::GithubProvider provider(
+    "Hard-Stuff",               // The organisation / user
+    "private_repo",             // The repo name, in this case this is a private repo
+    "custom_firmware_name.bin", // The custom firmware string to match - useful if you have multiple firmware builds
+    true                        // Needed to load the GitHub bearer token (only for private repo) from NVS.
+    );
 ```
+
+### GitLab
+
+```cpp
+#include <OTA-Hub/FOTA-providers/gitlab.hpp>
+...
+OTAHub::FOTA::GitlabProvider provider(
+    123...123,                       // The project id
+    "a_different_firmware_name.bin", // as above..
+    true                             // as above.. (only for private repo)
+    );
+```
+
+### Custom (dev your own!)
+
+- See our guide on [CUSTOM-PROVIDERS.md](./CUSTOM-PROVIDERS.md) _(docs upgrade coming soon!)_
+
+_\* Note that our default examples are for SSL-enabled connections, as GitHub requires a secure connection. As this is open-source, you can of course use your own storage buckets APIs for insecure connections etc._
+
+## Private repositories (you will need to make a Personal Access Token or Fine Grain Access Token)
+
+OTA Hub DIY works with both your public and private repositories, pulling release files (that are automatically compiled) directly from GitHub. If using a private repository, we need a Personal (or Fine Grain) Access Token (PAT) to represent you so devices can access your secure accoutn. [You can generate your PATs here](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens).
+
+- Then, once created, you can dump the token in a `.token` file and run _(example for **Windows**)_: 
+  ```powershell
+  # windows
+  $env:PLATFORMIO_BUILD_FLAGS = "-DOTAHUB_BEARER_TOKEN=\`"$((Get-Content .token -Raw).Trim())\`""
+  ```
+  ```bash
+  # linux
+  token=$(cat .token)
+  export PLATFORMIO_BUILD_FLAGS="-DOTAHUB_BEARER_TOKEN=\\\"$token\\\""
+  ```
+  or you can run:
+  ```powershell
+  # windows
+  $env:PLATFORMIO_BUILD_FLAGS='-DOTAHUB_BEARER_TOKEN=\"PUTYOURTOKENHERE\"';
+  ```
+  ```bash
+  # linux
+  export PLATFORMIO_BUILD_FLAGS='-DOTAHUB_BEARER_TOKEN=\"PUTYOURTOKENHERE\"'
+  ```
+  Then run `pio run -t upload` ONCE with the token, which writes the firmware, whereby on boot this token is stored to NVS on boot. All future builds should not need the token as we then retrieve it from NVS.
+
+
+See our [4G example](./examples/SIM7600/) for a SIM7600 HTTPS implementation of this.
+
 
 ### Other functions to be aware of
 
 -  `details.condition` is an UpdateCondition type, it can be:
-    - NO_UPDATE,     // The proposed release is the same name and same age as this one (i.e. they're the same)
-    - OLD_DIFFERENT, // The proposed release is different to what we've got here (but it's older)
-    - NEW_SAME,      // The proposed release is newer but has the same name as this one (are you versioning correctly?)
-    - NEW_DIFFERENT  // The proposed update is both newer and has a different name (so is likely to be a legitimate update)
+    - `NO_UPDATE`,     // The proposed release is the same name and same age as this one (i.e. they're the same)
+    - `OLD_DIFFERENT`, // The proposed release is different to what we've got here (but it's older)
+    - `NEW_SAME`,      // The proposed release is newer but has the same name as this one (are you versioning correctly?)
+    - `NEW_DIFFERENT`  // The proposed update is both newer and has a different name (so is likely to be a legitimate update)
     - This also means that if you flash locally and there is a release on GitHub already, that you'll get an "OLD_DIFFERENT" because you've flashed a firmware that isn't the latest release on GitHub.
-- `InstallCondition continueRedirect(&details, ...)` is for if you are told from your server that a redirect is necessary. By default we attempt to follow redirects internally, but some servers+setups may require you to e.g. disable following the redirect, then set custom certs and inject custom info, then follow the redirect.
 
 ### Dependencies
 
@@ -134,17 +186,20 @@ static const char OTAGH_CA_CERT[];          // CA Cert for GitHub's api.github.c
 
 ### Note on CA Certs
 
-- We've bundled a few GitHub CA certs together to cover both api.github.com, objects.githubusercontent.com, and github.io.
+- We've bundled a few GitHub and GitLab CA certs together to cover both's various HTTP reroutings.
 - **Certificates expire!** They tend to last a while, these ones last until 2030, but that's something to be aware of. Once either certificate has expired your devices will not be able to perform OTA (until flashed with new certs) - this is something we're going to attempt to future-proof going forwards.
 - Plus, as we've experienced recently, certificates that are in date [might just stop working](https://news.ycombinator.com/item?id=35295216). In which case it's not a bad idea to either have a fallback option (we recommend [ElegantOTA](https://github.com/ayushsharma82/ElegantOTA) for local flashing) or to watch this space for our future proofing.
 - You can always set your own certs (should the default ones not work) via `wifi_client.setCACert(NEW CA CERT)` and `wifi_client.setCACert(NEW CA CERT)`.
 - Or you can set `wifi_client.setInsecure()` and remove the `setCACerts...`. This means that the ESP32 will not validate if the api.github.com and objects.githubusercontent.com have the correct CA Certs, so could technically open up security issues (although for hobbyist / non-critical projects this should be fine). 
 
-## Compabibility and testing
+## Compatibility
 
-This library has been tested on the ESP32S3 with both the internal WiFi functionality and a [SIMCOM SIM7600G](https://github.com/Hard-Stuff/TinyGSM).
+This library has been tested on the ESP32S3 with both the internal WiFi functionality and a [SIMCOM SIM7600G](https://github.com/Hard-Stuff/TinyGSM), both with HTTP and HTTPS connections, both with GitHub and GitLab, and both on public and private repositories.
 
-We are looking for people to support us in testing more boards, other connectivity functionalities, and making **OTA Hub Pro** even more useful. Contribute either on our GitHub repos, or contact us at [ota-hub@hard-stuff.com](mailto:ota-hub@hard-stuff.com).
+We are looking for people to support us in testing more boards, other connectivity functionalities, and making **OTA Hub Pro** even more useful.
+
+## Contribution
+We're looking for people to work with us further on this - you can get started with issue reports or merge rquests, or you can contact us at [ota-hub@hard-stuff.com](mailto:ota-hub@hard-stuff.com).
 
 ## Hard Stuff
 
