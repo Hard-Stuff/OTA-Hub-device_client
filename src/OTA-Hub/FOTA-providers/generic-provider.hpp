@@ -1,16 +1,25 @@
 #pragma once
 #include <Arduino.h>
 #include <Preferences.h>
+#include <ArduinoJson.h>
+#include <OTA-Hub/types.h>
 
 namespace OTAHub::FOTA
 {
+#define OTAHUB_BEARER_NVS_STORE "ota_hub-bearer"
+#define OTAHUB_BEARER_NVS_STORE_TOKEN "token"
 #ifdef OTAHUB_BEARER_TOKEN
-#pragma message("OTAHUB_BEARER_TOKEN is defined — bearer token will be saved to NVS at runtime.")
+
+#ifndef OTA_VERSION
+#define OTA_VERSION "local_development"
+#endif
+
+#pragma message("OTAHUB_BEARER_TOKEN is defined - bearer token will be saved to NVS at runtime.")
   void SaveBearerToNVS()
   {
     Preferences bearer_store;
-    bearer_store.begin("ota_hub-bearer");
-    bearer_store.putString("token", OTAHUB_BEARER_TOKEN);
+    bearer_store.begin(OTAHUB_BEARER_NVS_STORE);
+    bearer_store.putString(OTAHUB_BEARER_NVS_STORE_TOKEN, OTAHUB_BEARER_TOKEN);
     bearer_store.end();
     Serial.println("Bearer saved on this occasion! Make sure it's not in your production code!");
   }
@@ -33,21 +42,25 @@ namespace OTAHub::FOTA
 
     GenericProvider() {};
 
-    String AssetEndpointConstructor(String asset_id)
+    /**
+     * Overload this with your nominal behaviour.
+     */
+    virtual void AssetEndpointFinder(JsonDocument &release_response, UpdateObject &return_object)
     {
-      return String(OTA_BIN_PATH) + asset_id;
     }
+
+    virtual bool AssetEndpointCheck(JsonDocument release_response) { return true; }
 
     bool UseBearerFromNVS()
     {
       Preferences bearer_store;
-      bearer_store.begin("ota_hub-bearer");
-      String token = bearer_store.getString("token", "fail_123!_");
+      bearer_store.begin(OTAHUB_BEARER_NVS_STORE);
+      String token = bearer_store.getString(OTAHUB_BEARER_NVS_STORE_TOKEN, "fail_123!_");
       bearer_store.end();
-      Serial.println("Token loaded!: " + token.substring(0, 10) + "...");
       if (token.equals("fail_123!_"))
         return false;
 
+      Serial.println("Token loaded!: " + token.substring(0, 10) + "...");
       OTA_BEARER = token;
       return true;
     }

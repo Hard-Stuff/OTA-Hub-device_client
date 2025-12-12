@@ -17,8 +17,7 @@
 	"license": "MIT",
 	"dependencies": {
 		"bblanchon/ArduinoJson": "^7.0.0",
-		"paulstoffregen/Time": "^1.6.1",
-		"hard-stuff/Http": "^0.0.6"
+		"paulstoffregen/Time": "^1.6.1"
 	},
 	"frameworks": "*",
 	"platforms": "*"

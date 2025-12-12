@@ -1,8 +1,4 @@
-# **OTA Hub (by Hard Stuff)** - OTA directly from GitHub
-
-## MAJOR CHANGE ANNOUNCEMENT
-
-We have merged the DIY library with the pro library to give one smooth library that offers more customisation and easier usage.
+# **OTA Hub (by Hard Stuff)** - OTA directly from GitHub, GitLab, and more!
 
 ## GitHub release usage
 
