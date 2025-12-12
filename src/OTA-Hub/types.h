@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Arduino.h>
+#include <Hard-Stuff-Http/utils.hpp>
 
 namespace OTAHub::FOTA
 {
@@ -48,7 +49,7 @@ namespace OTAHub::FOTA
       print_stream->println("Condition: " + String(condition_strings[condition]));
       print_stream->println("name: " + name);
       print_stream->println("tag_name: " + tag_name);
-      print_stream->println("published_at: " + published_at);
+      print_stream->println("published_at: " + formatTimeISO8601(published_at));
       print_stream->println("firmware_asset_id: " + String(firmware_asset_id));
       print_stream->println("firmware_asset_endpoint: " + String(firmware_asset_endpoint));
       print_stream->println("------------------------");

@@ -86,7 +86,7 @@ namespace OTAHub::FOTA
       if (!ota_provider->UseBearerFromNVS())
         Serial.println("Could not load Bearer token from NVS! This may not work going forwards.");
 
-    // #ifdef OTAHUB_DEBUG
+#ifdef OTAHUB_DEBUG
     Serial.print("OTA_SERVER:");
     Serial.println(ota_provider->OTA_SERVER);
     Serial.print("OTA_PORT:");
@@ -99,7 +99,7 @@ namespace OTAHub::FOTA
     Serial.println(ota_provider->OTA_JSON_HEADER);
     Serial.print("OTA_USE_BEARER:");
     Serial.println(ota_provider->OTA_USE_BEARER);
-    // #endif
+#endif
 
     reinit(set_underlying_client, ota_provider->OTA_SERVER.c_str(), ota_provider->OTA_PORT);
   }
